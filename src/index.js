@@ -5,16 +5,21 @@ import detectEthereumProvider from "@metamask/detect-provider";
 import { Contract, ethers } from "ethers";
 import { useState, useEffect, useRef } from 'react';
 import bankManifest from "./contracts/Bank.json";
+import tokenManifest from "./contracts/Token.json";
 
 function App() {
   const bank = useRef(null);
+  const token = useRef(null);
   const [balance, setBalance] = useState();
   const [interest, setInterest] = useState();
   const [doubleInterestBalance, setDoubleInterestBalance] = useState();
   const [doubleInterest, setDoubleInterest] = useState();
   const [amount, setAmount] = useState(1);
+  const [amountToSell, setAmountToSell] = useState(1);
   const [contractBalance, setContractBalance] = useState();
   const [bnbFromSales, setBNBFromSales] = useState();
+  const [BMIWPrice, setBMIWPrice] = useState();
+  const [totalBMIW, setTotalBMIW] = useState();
 
   useEffect(() => {
     initContracts();
@@ -74,11 +79,32 @@ function App() {
     }
     else
       setBNBFromSales(0)
+
+    let bmiwPriceFromBlockchain = await bank.current?.getBMIWPrice();
+    if (bmiwPriceFromBlockchain != null) {
+      let b = ethers.utils.formatEther(bmiwPriceFromBlockchain);
+      setBMIWPrice(b)
+    }
+    else
+    setBMIWPrice(0)
+
+    let totalBMIWFromBlockchain = await bank.current?.getTotalBMIW();
+    if (totalBMIWFromBlockchain != null) {
+      let b = ethers.utils.formatEther(totalBMIWFromBlockchain);
+      setTotalBMIW(b)
+    }
+    else
+    setTotalBMIW(0)
   }
 
   const updateAmount = (e) => {
     const value = parseFloat(e.target.value);
     setAmount(value);
+  };
+
+  const updateAmountToSell = (e) => {
+    const value = parseFloat(e.target.value);
+    setAmountToSell(value);
   };
 
   let getBlockchain = async () => {
@@ -93,6 +119,12 @@ function App() {
       bank.current = new Contract(
         bankManifest.networks[networkId].address,
         bankManifest.abi,
+        signer
+      );
+
+      token.current = new Contract(
+        tokenManifest.networks[networkId].address,
+        tokenManifest.abi,
         signer
       );
 
@@ -188,6 +220,31 @@ function App() {
     updateBank();
   };
 
+  const clickSellBMIW = async (e) => {
+    e.preventDefault();
+    const inputValue = e.target.elements[0].value;
+
+    console.log(inputValue*BMIWPrice);
+
+    await token.current.approve(bank.current.address, ethers.utils.parseEther(inputValue), {
+      gasLimit: 6721975,
+      gasPrice: 20000000000,
+    });
+
+    const tx = await bank.current.sellBMIW(inputValue, {
+      gasLimit: 6721975,
+      gasPrice: 20000000000,
+    });
+
+    try {
+      await tx.wait();
+    } catch (error) {
+      alert("The bank might not have enough BNB to pay the gas")
+    }
+
+    updateBank();
+  };
+
   return (
     <div>
       <h1>Bank</h1>
@@ -211,7 +268,7 @@ function App() {
       <p>Balance: {doubleInterestBalance} BNB</p>
       <p>Interest: {doubleInterest} BMIW</p>
       <button onClick={() => clickWithdrawDoubleInterest()} > Withdraw (0.05 BNB)</button>
-      <br></br><br></br>
+      <br></br><br></br><br></br>
 
       <h3>Buy BMIW</h3>
       <form onSubmit={(e) => clickBuyBMIW(e)}>
@@ -224,9 +281,22 @@ function App() {
         />
         <button type="submit">Buy for {amount * 0.001} BNB</button>
       </form>
+      <br></br>
+      <h3>Sell BMIW</h3>
+      <form onSubmit={(e) => clickSellBMIW(e)}>
+        <input
+          type="number"
+          step="1"
+          min={1}
+          value={amountToSell}
+          onChange={(e) => updateAmountToSell(e)}
+        />
+        <button type="submit" disabled={BMIWPrice == 0}>Sell for {BMIWPrice*amountToSell} BNB</button>
+      </form>
       <br></br><br></br>
       <p>Contrct Balance: {contractBalance} BNB</p>
       <p>BNB from Sales: {bnbFromSales} BNB</p>
+      <p>Total BMIW: {totalBMIW} BMIW</p>
     </div>
   )
 }
